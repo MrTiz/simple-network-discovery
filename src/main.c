@@ -96,6 +96,8 @@ struct arp_header {
     unsigned char target_ip[IPV4_LENGTH];
 };
 
+unsigned active_host = 0;
+
 /* 
  * Print a simple "how to use".
  */
@@ -437,7 +439,7 @@ int bind_arp(int ifindex, int *fd) {
  */
 void set_socket_timeout(int * fd) {
     struct timeval timeout;      
-    timeout.tv_sec = 15;
+    timeout.tv_sec = 10;
     timeout.tv_usec = 0;
 
     setsockopt (*fd, SOL_SOCKET, SO_RCVTIMEO, (char *)&timeout, sizeof(timeout));
@@ -472,7 +474,8 @@ int read_arp(int fd) {
     memset(&sender_a, 0, sizeof(struct in_addr));
     memcpy(&sender_a.s_addr, arp_resp->sender_ip, sizeof(uint32_t));
 
-    print_arp_packet(arp_resp); 
+    print_arp_packet(arp_resp);
+    active_host++;
 
     return NO_ERROR;
 }
@@ -509,10 +512,8 @@ int test_arping(const char *ifname, uint32_t dst) {
     }
 
     while(1) {
-        int r = read_arp(arp_fd);
-        if (r != 0)
+        if (read_arp(arp_fd) != 0) 
             perror("");
-
         break;
     }
 
@@ -588,5 +589,6 @@ int main(int argc, char *argv[]) {
         sleep(req_timeout);
     }
 
+    printf("Active HOST = %u\n", active_host);
     return 0;
 }
