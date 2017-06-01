@@ -102,7 +102,7 @@ struct arp_header {
  * Print a simple "how to use".
  */
 void print_usage(const char *arg) {
-    fprintf(stderr, "Usage: %s -i <INTERFACE_NAME> -s <SUBNET> -t <TIMEOUT_INTERVAL>\n", arg);
+    fprintf(stderr, "Usage: %s -i <INTERFACE_NAME> -s <SUBNET> -t <TIMEOUT>\n", arg);
 }
 
 /* 
