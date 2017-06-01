@@ -159,7 +159,7 @@ uint32_t cast_IPv4_to_uint(char *ipAddress) {
  * Cast an uint32_t that represents IPv4 address to string.
  */
 char * cast_uint_to_IPv4(uint32_t ip) {
-    char *_ip = (char *) calloc(15, sizeof(char));
+    char *_ip = (char *) calloc(16, sizeof(char));
     unsigned char ipbytes[4];
 
     ipbytes[0] = ip & 0xFF;
@@ -485,14 +485,11 @@ int read_arp(int fd) {
  * interface <ifname> to IPv4 address <ip>.
  * Returns 0 on success.
  */
-int test_arping(const char *ifname, uint32_t dst) {
+int _arping(const char *ifname, struct subnet *snet, unsigned timeout) {
     int err = 0;
     uint32_t src;
     int ifindex;
     char mac[MAC_LENGTH];
-
-    if (dst == 0 || dst == 0xffffffff)
-        return INVALID_IP;
 
     err = get_if_info(ifname, &src, mac, &ifindex);
     if (err)
@@ -504,17 +501,39 @@ int test_arping(const char *ifname, uint32_t dst) {
         return err;
 
     set_socket_timeout(&arp_fd);
-    err = send_arp_request(arp_fd, ifindex, mac, src, invert_IP(dst));
-    if (err) {
-        close(arp_fd);
-        arp_fd = 0;
-        return err;
-    }
 
-    while(1) {
-        if (read_arp(arp_fd) != 0) 
-            perror("");
-        break;
+    char * ip;
+    unsigned _begin = snet->start;
+    unsigned _end = snet->end;
+    free(snet);
+
+    for(uint i = _begin; i <= _end; i++) {
+        ip = cast_uint_to_IPv4(i);
+        printf("\nSending ARP packet to: %s ...\n\n", ip);
+        free(ip);
+
+        if (i == 0 || i == 0xffffffff)
+            return INVALID_IP;
+
+        err = send_arp_request(arp_fd, ifindex, mac, src, invert_IP(i));
+
+        if (err) {
+            close(arp_fd);
+            arp_fd = 0;
+            return err;
+        }
+
+        while(1) {
+            int r = read_arp(arp_fd);
+            if (r > 0) 
+                perror("");
+            else if (r < 0)
+                ERROR(r);
+            break;
+        }
+
+        printf("\n###############################\n");
+        sleep(timeout);
     }
 
     close(arp_fd);
@@ -575,20 +594,8 @@ int main(int argc, char *argv[]) {
     free(end);
     free(mask);
 
-    char * ip;
-    unsigned _begin = snet->start;
-    unsigned _end = snet->end;
-    free(snet);
+    ERROR(_arping(interface, snet, req_timeout));
 
-    for(uint i = _begin; i <= _end; i++) {
-        ip = cast_uint_to_IPv4(i);
-        printf("\nSending ARP packet to: %s ...\n\n", ip);
-        free(ip);
-        ERROR(test_arping(interface, i));
-        printf("\n###############################\n");
-        sleep(req_timeout);
-    }
-
-    printf("Active HOST = %u\n", active_host);
+    printf("\nActive HOST = %u\n", active_host);
     return 0;
 }
