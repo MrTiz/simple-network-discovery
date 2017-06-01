@@ -219,7 +219,6 @@ struct subnet *parse_subnet(char *address) {
 
 /*
  * Converts struct sockaddr with an IPv4 address to network byte order uin32_t.
- * Returns 0 on success.
  */
 int int_ip4(struct sockaddr *addr, uint32_t *ip) {
     if (addr->sa_family == AF_INET) {
@@ -234,7 +233,6 @@ int int_ip4(struct sockaddr *addr, uint32_t *ip) {
 
 /*
  * Writes interface IPv4 address as network byte order to ip.
- * Returns 0 on success.
  */
 int get_if_ip4(int fd, const char *ifname, uint32_t *ip) {
     /* Interface request structure used for socket ioctl's */
@@ -411,7 +409,6 @@ int get_if_info(const char *ifname, uint32_t *ip, char *mac, int *ifindex) {
 /*
  * Creates a raw socket that listens for ARP traffic on specific ifindex.
  * Writes out the socket's FD.
- * Return 0 on success.
  */
 int bind_arp(int ifindex, int *fd) {
     // Submit request for a raw socket descriptor.
@@ -448,7 +445,6 @@ void set_socket_timeout(int * fd) {
 
 /*
  * Reads a single ARP reply from fd.
- * Return 0 on success.
  */
 int read_arp(int fd) {
     unsigned char buffer[BUF_SIZE];
@@ -481,9 +477,7 @@ int read_arp(int fd) {
 }
 
 /*
- * Sample code that sends an ARP who-has request on
- * interface <ifname> to IPv4 address <ip>.
- * Returns 0 on success.
+ * Sends an ARP who-has request on interface <ifname>.
  */
 int _arping(const char *ifname, struct subnet *snet, unsigned timeout) {
     int err = 0;
