@@ -66,11 +66,9 @@
         } \
         case (NOT_ARP_PACKET): { \
             fprintf(stderr, "Not an ARP packet"); \
-            exit(EXIT_FAILURE); \
         } \
         case (NOT_ARP_REPLY): { \
             fprintf(stderr, "Not an ARP reply"); \
-            exit(EXIT_FAILURE); \
         } \
         default: { \
             perror(""); \
@@ -435,13 +433,25 @@ int bind_arp(int ifindex, int *fd) {
 }
 
 /*
+ * Set timeout to socket
+ */
+void set_socket_timeout(int * fd) {
+    struct timeval timeout;      
+    timeout.tv_sec = 15;
+    timeout.tv_usec = 0;
+
+    setsockopt (*fd, SOL_SOCKET, SO_RCVTIMEO, (char *)&timeout, sizeof(timeout));
+    setsockopt (*fd, SOL_SOCKET, SO_SNDTIMEO, (char *)&timeout, sizeof(timeout));
+}
+
+/*
  * Reads a single ARP reply from fd.
  * Return 0 on success.
  */
 int read_arp(int fd) {
     unsigned char buffer[BUF_SIZE];
     /* Receive a message from a socket */
-    ssize_t length = recv(fd, buffer, BUF_SIZE, MSG_DONTWAIT);
+    ssize_t length = recv(fd, buffer, BUF_SIZE, 0);
 
     if (length == -1)
         return errno;
@@ -490,6 +500,7 @@ int test_arping(const char *ifname, uint32_t dst) {
     if (err)
         return err;
 
+    set_socket_timeout(&arp_fd);
     err = send_arp_request(arp_fd, ifindex, mac, src, invert_IP(dst));
     if (err) {
         close(arp_fd);
@@ -499,8 +510,10 @@ int test_arping(const char *ifname, uint32_t dst) {
 
     while(1) {
         int r = read_arp(arp_fd);
-        if (r == 0) 
-            break;
+        if (r != 0)
+            perror("");
+
+        break;
     }
 
     close(arp_fd);
