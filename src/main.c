@@ -66,9 +66,11 @@
         } \
         case (NOT_ARP_PACKET): { \
             fprintf(stderr, "Not an ARP packet"); \
+            break; \
         } \
         case (NOT_ARP_REPLY): { \
             fprintf(stderr, "Not an ARP reply"); \
+            break; \
         } \
         default: { \
             perror(""); \
@@ -497,11 +499,16 @@ int _arping(const char *ifname, struct subnet *snet, unsigned timeout) {
     set_socket_timeout(&arp_fd);
 
     char * ip;
-    unsigned _begin = snet->start;
+    unsigned i = snet->start + 1;
     unsigned _end = snet->end;
     free(snet);
 
-    for(uint i = _begin; i <= _end; i++) {
+    if (snet->mask >= 4294967294) {
+        i--;
+        _end++;
+    }
+
+    do {
         ip = cast_uint_to_IPv4(i);
         printf("\nSending ARP packet to: %s ...\n\n", ip);
         free(ip);
@@ -528,7 +535,9 @@ int _arping(const char *ifname, struct subnet *snet, unsigned timeout) {
 
         printf("\n###############################\n");
         sleep(timeout);
+        i++;
     }
+    while (i < _end);
 
     close(arp_fd);
     return NO_ERROR;
@@ -576,12 +585,15 @@ int main(int argc, char *argv[]) {
     char * start = cast_uint_to_IPv4(snet->start);
     char * end = cast_uint_to_IPv4(snet->end);
     char * mask = cast_uint_to_IPv4(snet->mask);
+    unsigned host_to_discover = snet->end - (snet->start + 1);
+
+    if (snet->mask >= 4294967294) host_to_discover += 2;
 
     printf("###############################\n");
     printf("Subnet begins at: %s\n", start);
     printf("Subnet ends at: %s\n", end);
     printf("Subnet mask is: %s\n", mask);
-    printf("Host to discover: %d\n", (snet->end - snet->start) + 1);
+    printf("Host to discover: %d\n", host_to_discover);
     printf("###############################\n");
 
     free(start);
