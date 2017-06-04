@@ -35,6 +35,7 @@
 #define AF_INET_ERROR -6
 #define NOT_ARP_PACKET -7
 #define NOT_ARP_REPLY -8
+#define DESTINATION_UNREACHABLE -9
 
 #define ERROR(error) \
     switch (error) { \
@@ -61,15 +62,19 @@
             exit(EXIT_FAILURE); \
         } \
         case (AF_INET_ERROR): { \
-            fprintf(stderr, "Socket not AF_INET"); \
+            fprintf(stderr, "Socket not AF_INET\n"); \
             exit(EXIT_FAILURE); \
         } \
         case (NOT_ARP_PACKET): { \
-            fprintf(stderr, "Not an ARP packet"); \
+            fprintf(stderr, "Not an ARP packet\n"); \
             break; \
         } \
         case (NOT_ARP_REPLY): { \
-            fprintf(stderr, "Not an ARP reply"); \
+            fprintf(stderr, "Not an ARP reply\n"); \
+            break; \
+        } \
+        case (DESTINATION_UNREACHABLE): { \
+            fprintf(stderr, "Destination unreachable\n"); \
             break; \
         } \
         default: { \
@@ -450,22 +455,33 @@ void set_socket_timeout(int * fd) {
  */
 int read_arp(int fd) {
     unsigned char buffer[BUF_SIZE];
-    /* Receive a message from a socket */
-    ssize_t length = recv(fd, buffer, BUF_SIZE, 0);
+    struct ethhdr *rcv_resp;
+    struct arp_header *arp_resp;
+    uint8_t attempts = 10;
 
-    if (length == -1)
-        return errno;
-    
-    /* This is an Ethernet frame header. */
-    struct ethhdr *rcv_resp = (struct ethhdr *) buffer;
-    struct arp_header *arp_resp = (struct arp_header *) (buffer + ETH2_HEADER_LEN);
+    while (1) {
+        /* Receive a message from a socket */
+        ssize_t length = recv(fd, buffer, BUF_SIZE, 0);
 
-    /* The ntohs() function convert values between host and network byte order */
-    if (ntohs(rcv_resp->h_proto) != PROTO_ARP)
-        return NOT_ARP_PACKET;
+        if (length == -1)
+            return DESTINATION_UNREACHABLE;
+        
+        /* This is an Ethernet frame header. */
+        rcv_resp = (struct ethhdr *) buffer;
+        arp_resp = (struct arp_header *) (buffer + ETH2_HEADER_LEN);
 
-    if (ntohs(arp_resp->opcode) != ARP_REPLY)
-        return NOT_ARP_REPLY;
+        /* The ntohs() function convert values between host and network byte order */
+        if (ntohs(rcv_resp->h_proto) != PROTO_ARP)
+            return NOT_ARP_PACKET;
+
+        if (--attempts == 0)
+            return DESTINATION_UNREACHABLE;
+
+        if (ntohs(arp_resp->opcode) != ARP_REPLY)
+            continue;
+        
+        break;
+    }
 
     /* Internet address. */
     struct in_addr sender_a;
