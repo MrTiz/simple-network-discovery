@@ -443,7 +443,7 @@ int bind_arp(int ifindex, int *fd) {
  */
 void set_socket_timeout(int * fd) {
     struct timeval timeout;      
-    timeout.tv_sec = 3;
+    timeout.tv_sec = 5;
     timeout.tv_usec = 0;
 
     setsockopt (*fd, SOL_SOCKET, SO_RCVTIMEO, (char *)&timeout, sizeof(timeout));
