@@ -443,7 +443,7 @@ int bind_arp(int ifindex, int *fd) {
  */
 void set_socket_timeout(int * fd) {
     struct timeval timeout;      
-    timeout.tv_sec = 10;
+    timeout.tv_sec = 3;
     timeout.tv_usec = 0;
 
     setsockopt (*fd, SOL_SOCKET, SO_RCVTIMEO, (char *)&timeout, sizeof(timeout));
@@ -455,33 +455,22 @@ void set_socket_timeout(int * fd) {
  */
 int read_arp(int fd) {
     unsigned char buffer[BUF_SIZE];
-    struct ethhdr *rcv_resp;
-    struct arp_header *arp_resp;
-    uint8_t attempts = 10;
+    /* Receive a message from a socket */
+    ssize_t length = recv(fd, buffer, BUF_SIZE, 0);
 
-    while (1) {
-        /* Receive a message from a socket */
-        ssize_t length = recv(fd, buffer, BUF_SIZE, 0);
+    if (length == -1)
+        return DESTINATION_UNREACHABLE;
+    
+    /* This is an Ethernet frame header. */
+    struct ethhdr *rcv_resp = (struct ethhdr *) buffer;
+    struct arp_header *arp_resp = (struct arp_header *) (buffer + ETH2_HEADER_LEN);
 
-        if (length == -1)
-            return DESTINATION_UNREACHABLE;
-        
-        /* This is an Ethernet frame header. */
-        rcv_resp = (struct ethhdr *) buffer;
-        arp_resp = (struct arp_header *) (buffer + ETH2_HEADER_LEN);
+    /* The ntohs() function convert values between host and network byte order */
+    if (ntohs(rcv_resp->h_proto) != PROTO_ARP)
+        return NOT_ARP_PACKET;
 
-        /* The ntohs() function convert values between host and network byte order */
-        if (ntohs(rcv_resp->h_proto) != PROTO_ARP)
-            return NOT_ARP_PACKET;
-
-        if (--attempts == 0)
-            return DESTINATION_UNREACHABLE;
-
-        if (ntohs(arp_resp->opcode) != ARP_REPLY)
-            continue;
-        
-        break;
-    }
+    if (ntohs(arp_resp->opcode) != ARP_REPLY)
+        return DESTINATION_UNREACHABLE;
 
     /* Internet address. */
     struct in_addr sender_a;
