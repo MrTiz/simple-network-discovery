@@ -109,7 +109,9 @@ unsigned active_host = 0;
  * Print a simple "how to use".
  */
 void print_usage(const char *arg) {
-    fprintf(stderr, "Usage: %s -i <INTERFACE_NAME> -s <SUBNET> -t <TIMEOUT>\n", arg);
+    fprintf(stderr, "Usage: %s -i <INTERFACE_NAME> -s <SUBNET>\n\n", arg);
+    fprintf(stderr, "OPTIONAL:\n\t-t <TIMEOUT> - time (in seconds) between each ARP request (min. 0, max. 256)");
+    fprintf(stderr, "\n\t-w <WAITING> - time (in seconds) before read all ARP replies (min. 0, max. 256). Default is 3\n");
 }
 
 /* 
@@ -446,11 +448,11 @@ void set_socket_timeout(int * fd) {
  * Print some information about sent or received packet.
  */
 void print_packet(arp_header *packet) {
-    printf("%u.%u.%u.%u \t", 
+    printf("%u.%u.%u.%u %9.9s", 
         packet->sender_ip[0],
         packet->sender_ip[1],
         packet->sender_ip[2],
-        packet->sender_ip[3]);
+        packet->sender_ip[3], "");
 
     printf("%02X:%02X:%02X:%02X:%02X:%02X\n",
           packet->sender_mac[0],
@@ -509,7 +511,7 @@ int read_arp(int fd, char *dest_ip) {
 /*
  * Sends an ARP who-has request on interface <ifname>.
  */
-int _arping(const char *ifname, struct subnet *snet, unsigned timeout, uint32_t n_host) {
+int _arping(const char *ifname, struct subnet *snet, uint8_t timeout, uint8_t waiting, uint32_t n_host) {
     int err = 0;
     uint32_t src;
     int ifindex;
@@ -564,7 +566,7 @@ int _arping(const char *ifname, struct subnet *snet, unsigned timeout, uint32_t 
         if (i >= n_host && u_ip < _end) {
             unsigned _u_ip = u_ip - i;
             
-            sleep(3);
+            sleep(waiting);
             printf("\nReading %u replies ...\n\n", n_host);
         
             for (int j = 0; j < n_host; j++) {
@@ -584,7 +586,7 @@ int _arping(const char *ifname, struct subnet *snet, unsigned timeout, uint32_t 
         else if (i <= n_host && u_ip >= _end) {
             unsigned _u_ip = u_ip - i;
             
-            sleep(3);
+            sleep(waiting);
             printf("\nReading replies ...\n\n");
         
             for (int j = 0; j < n_host; j++) {
@@ -610,10 +612,11 @@ int _arping(const char *ifname, struct subnet *snet, unsigned timeout, uint32_t 
 int main(int argc, char *argv[]) {
     char *interface = NULL;
     char *subnet = NULL;
-    unsigned req_timeout = 0;
+    uint8_t req_timeout = 0;
+    uint8_t waiting = 3;
     int arg;
 
-    while ((arg = getopt(argc, argv, "i:s:t:h")) != -1) {
+    while ((arg = getopt(argc, argv, "i:s:t:w:h")) != -1) {
         switch (arg) {
             case 'i':
                 interface = optarg;
@@ -623,6 +626,9 @@ int main(int argc, char *argv[]) {
                 break;
             case 't':
                 req_timeout = atoi(optarg);
+                break;
+            case 'w':
+                waiting = atoi(optarg);
                 break;
             case 'h':
                 print_usage(argv[0]);
@@ -673,7 +679,7 @@ int main(int argc, char *argv[]) {
     free(end);
     free(mask);
 
-    int outcome = _arping(interface, snet, req_timeout, host_to_discover);
+    int outcome = _arping(interface, snet, req_timeout, waiting, host_to_discover);
     if (outcome == -1)
         ERROR(errno);
 
