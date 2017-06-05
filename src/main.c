@@ -91,7 +91,7 @@ struct subnet {
 };
 
 /* ARP header */
-struct arp_header {
+typedef struct _arp_header {
     unsigned short hardware_type;
     unsigned short protocol_type;
     unsigned char hardware_len;
@@ -101,7 +101,7 @@ struct arp_header {
     unsigned char sender_ip[IPV4_LENGTH];
     unsigned char target_mac[MAC_LENGTH];
     unsigned char target_ip[IPV4_LENGTH];
-};
+} arp_header;
 
 unsigned active_host = 0;
 
@@ -120,7 +120,7 @@ int check_existent_interface(char *interface) {
 
     /* Get list of all network interfaces */
     if (getifaddrs(&ifa) == -1)
-        return errno;
+        return -1;
 
     /* Search interface in list */
     if_aux = ifa;
@@ -134,23 +134,8 @@ int check_existent_interface(char *interface) {
     }
 
     freeifaddrs(ifa);
-    return INVALID_INTERFACE;
-}
-
-/* 
- * Split "address/subnet" in "address'\0'subnet".
- */
-char *sub_split(char *string, char delim) {
-    uint8_t i = 0;
-
-    while (string[i] != '\0') {
-        if (string[i] == delim) {
-            string[i] = '\0';
-            return &(string[i+1]);
-        }
-        i++;
-    }
-    return NULL;
+    errno = INVALID_INTERFACE;
+    return -1;
 }
 
 /* 
@@ -167,14 +152,7 @@ uint32_t cast_IPv4_to_uint(char *ipAddress) {
  */
 char * cast_uint_to_IPv4(uint32_t ip) {
     char *_ip = (char *) calloc(16, sizeof(char));
-    unsigned char ipbytes[4];
-
-    ipbytes[0] = ip & 0xFF;
-    ipbytes[1] = (ip >> 8) & 0xFF;
-    ipbytes[2] = (ip >> 16) & 0xFF;
-    ipbytes[3] = (ip >> 24) & 0xFF;   
-
-    sprintf(_ip, "%d.%d.%d.%d", ipbytes[3], ipbytes[2], ipbytes[1], ipbytes[0]);
+    sprintf(_ip, "%d.%d.%d.%d", (ip >> 24) & 0xFF, (ip >> 16) & 0xFF, (ip >> 8) & 0xFF, ip & 0xFF);
     return _ip;   
 }
 
@@ -202,7 +180,16 @@ uint32_t get_mask(uint8_t prefix) {
  */
 struct subnet *parse_subnet(char *address) {
     struct subnet *snet = (struct subnet *) calloc(1, sizeof(struct subnet));
-    char *prefix = sub_split(address, '/');
+
+    char *prefix = strchr(address, '/');
+
+    if (prefix == NULL) {
+        errno = EINVAL;
+        return NULL;
+    }
+
+    *prefix = '\0';
+    prefix++;
 
     if (prefix == NULL)
         snet->mask = get_mask(atoi("32"));
@@ -234,8 +221,10 @@ int int_ip4(struct sockaddr *addr, uint32_t *ip) {
         /* Internet address */
         *ip = ip_sock->sin_addr.s_addr;
         return NO_ERROR;
-    } else 
-        return AF_INET_ERROR;
+    } else {
+        errno = AF_INET_ERROR;
+        return -1;
+    }
 }
 
 /*
@@ -247,13 +236,15 @@ int get_if_ip4(int fd, const char *ifname, uint32_t *ip) {
     memset(&ifrs, 0, sizeof(struct ifreq));
 
     /* Max length of interface name */
-    if (strlen(ifname) > (IFNAMSIZ - 1))
-        return INVALID_INTERFACE_NAME;
+    if (strlen(ifname) > (IFNAMSIZ - 1)) {
+        errno = INVALID_INTERFACE_NAME;
+        return -1;
+    }
 
     strcpy(ifrs.ifr_name, ifname);
     /* The ioctl() function manipulates the underlying device parameters of special files */
     if (ioctl(fd, SIOCGIFADDR, &ifrs) == -1)
-        return errno;
+        return -1;
 
     return int_ip4(&ifrs.ifr_addr, ip);
 }
@@ -261,7 +252,7 @@ int get_if_ip4(int fd, const char *ifname, uint32_t *ip) {
 /*
  * Print some information about sent or received packet.
  */
-void print_arp_packet(struct arp_header *arp_resp) {
+void print_arp_packet(arp_header *arp_resp) {
     unsigned short _opc = ntohs(arp_resp->opcode);
 
     if (_opc == 1)
@@ -327,7 +318,7 @@ int send_arp_request(int fd, int ifindex, char *src_mac, uint32_t src_ip, uint32
 
     /* This is an Ethernet frame header. */
     struct ethhdr *send_req = (struct ethhdr *) buffer;
-    struct arp_header *arp_req = (struct arp_header *) (buffer + ETH2_HEADER_LEN);
+    arp_header *arp_req = (arp_header *) (buffer + ETH2_HEADER_LEN);
     ssize_t ret;
 
     /* Broadcast */
@@ -357,9 +348,9 @@ int send_arp_request(int fd, int ifindex, char *src_mac, uint32_t src_ip, uint32
     /* Send a message on a socket */
     ret = sendto(fd, buffer, 42, 0, (struct sockaddr *) &socket_address, sizeof(socket_address));
     if (ret == -1)
-        return errno;
+        return -1;
 
-    print_arp_packet(arp_req);
+    //print_arp_packet(arp_req);
     return NO_ERROR;
 }
 
@@ -379,12 +370,13 @@ int get_if_info(const char *ifname, uint32_t *ip, char *mac, int *ifindex) {
     int raw_socket = socket(AF_PACKET, SOCK_RAW, htons(ETH_P_ARP));
 
     if (raw_socket < 0) 
-        return errno;
+        return -1;
 
     //Max length of interface name
     if (strlen(ifname) > (IFNAMSIZ - 1)) {
         close(raw_socket);
-        return INVALID_INTERFACE_NAME;
+        errno = INVALID_INTERFACE_NAME;
+        return -1;
     }
 
     strcpy(ifr.ifr_name, ifname);
@@ -392,7 +384,7 @@ int get_if_info(const char *ifname, uint32_t *ip, char *mac, int *ifindex) {
     //Get interface index using name
     if (ioctl(raw_socket, SIOCGIFINDEX, &ifr) == -1) {
         close(raw_socket);
-        return errno;
+        return -1;
     }
     *ifindex = ifr.ifr_ifindex;
     //printf("interface index is %d\n", *ifindex);
@@ -400,7 +392,7 @@ int get_if_info(const char *ifname, uint32_t *ip, char *mac, int *ifindex) {
     //Get MAC address of the interface
     if (ioctl(raw_socket, SIOCGIFHWADDR, &ifr) == -1) {
         close(raw_socket);
-        return errno;
+        return -1;
     }
 
     //Copy mac address to output
@@ -422,7 +414,7 @@ int bind_arp(int ifindex, int *fd) {
     *fd = socket(AF_PACKET, SOCK_RAW, htons(ETH_P_ARP));
 
     if (*fd < 0)
-        return errno;
+        return -1;
 
     struct sockaddr_ll sll;
     memset(&sll, 0, sizeof(struct sockaddr_ll));
@@ -432,7 +424,7 @@ int bind_arp(int ifindex, int *fd) {
     // bind a name to a socket
     if (bind(*fd, (struct sockaddr*) &sll, sizeof(struct sockaddr_ll)) < 0) {
         close(*fd);
-        return errno;
+        return -1;
     }
    
     return NO_ERROR;
@@ -443,7 +435,7 @@ int bind_arp(int ifindex, int *fd) {
  */
 void set_socket_timeout(int * fd) {
     struct timeval timeout;      
-    timeout.tv_sec = 5;
+    timeout.tv_sec = 1;
     timeout.tv_usec = 0;
 
     setsockopt (*fd, SOL_SOCKET, SO_RCVTIMEO, (char *)&timeout, sizeof(timeout));
@@ -451,100 +443,167 @@ void set_socket_timeout(int * fd) {
 }
 
 /*
+ * Print some information about sent or received packet.
+ */
+void print_packet(arp_header *packet) {
+    printf("%u.%u.%u.%u \t", 
+        packet->sender_ip[0],
+        packet->sender_ip[1],
+        packet->sender_ip[2],
+        packet->sender_ip[3]);
+
+    printf("%02X:%02X:%02X:%02X:%02X:%02X\n",
+          packet->sender_mac[0],
+          packet->sender_mac[1],
+          packet->sender_mac[2],
+          packet->sender_mac[3],
+          packet->sender_mac[4],
+          packet->sender_mac[5]);
+}
+
+/*
  * Reads a single ARP reply from fd.
  */
-int read_arp(int fd) {
+int read_arp(int fd, char *dest_ip) {
+    char *_ip = (char *) calloc(16, sizeof(char));
     unsigned char buffer[BUF_SIZE];
+
     /* Receive a message from a socket */
     ssize_t length = recv(fd, buffer, BUF_SIZE, 0);
 
-    if (length == -1)
-        return DESTINATION_UNREACHABLE;
+    if (length == -1) {
+        free(_ip);
+        errno = DESTINATION_UNREACHABLE;
+        return -1;
+    }
     
     /* This is an Ethernet frame header. */
     struct ethhdr *rcv_resp = (struct ethhdr *) buffer;
-    struct arp_header *arp_resp = (struct arp_header *) (buffer + ETH2_HEADER_LEN);
+    arp_header *arp_resp = (arp_header *) (buffer + ETH2_HEADER_LEN);
 
     /* The ntohs() function convert values between host and network byte order */
-    if (ntohs(rcv_resp->h_proto) != PROTO_ARP)
-        return NOT_ARP_PACKET;
+    if (ntohs(rcv_resp->h_proto) != PROTO_ARP) {
+        free(_ip);
+        errno = NOT_ARP_PACKET;
+        return -1;
+    }
 
-    if (ntohs(arp_resp->opcode) != ARP_REPLY)
-        return DESTINATION_UNREACHABLE;
+    sprintf(_ip, "%d.%d.%d.%d", arp_resp->sender_ip[0], 
+                                arp_resp->sender_ip[1], 
+                                arp_resp->sender_ip[2], 
+                                arp_resp->sender_ip[3]);
 
-    /* Internet address. */
-    struct in_addr sender_a;
-    memset(&sender_a, 0, sizeof(struct in_addr));
-    memcpy(&sender_a.s_addr, arp_resp->sender_ip, sizeof(uint32_t));
+    /* Check if packet is an ARP reply and if sender is the same of the target */
+    if (ntohs(arp_resp->opcode) != ARP_REPLY || strcmp(dest_ip, _ip)) {
+        free(_ip);
+        errno = DESTINATION_UNREACHABLE;
+        return -1;
+    }
 
-    print_arp_packet(arp_resp);
+    free(_ip);
+    print_packet(arp_resp);
     active_host++;
-
     return NO_ERROR;
 }
 
 /*
  * Sends an ARP who-has request on interface <ifname>.
  */
-int _arping(const char *ifname, struct subnet *snet, unsigned timeout) {
+int _arping(const char *ifname, struct subnet *snet, unsigned timeout, uint32_t n_host) {
     int err = 0;
     uint32_t src;
     int ifindex;
     char mac[MAC_LENGTH];
 
+    if (n_host > 510) n_host = 510;
+    int *sockets = (int *) calloc(n_host, sizeof(int));
+
     err = get_if_info(ifname, &src, mac, &ifindex);
-    if (err)
-        return err;
+    if (err) 
+        return -1;
 
-    int arp_fd;
-    err = bind_arp(ifindex, &arp_fd);
-    if (err)
-        return err;
-
-    set_socket_timeout(&arp_fd);
-
-    char * ip;
-    unsigned i = snet->start + 1;
+    char *ip;
+    unsigned u_ip = snet->start + 1;
     unsigned _end = snet->end;
-    free(snet);
+    unsigned long i = 0;
 
     if (snet->mask >= 4294967294) {
-        i--;
+        u_ip--;
         _end++;
     }
 
+    printf("\nARP scan in progress... (it may take a few minutes)\n");
+    printf("Sending requests ...\n");
+
     do {
-        ip = cast_uint_to_IPv4(i);
-        printf("\nSending ARP packet to: %s ...\n\n", ip);
-        free(ip);
+        err = bind_arp(ifindex, &sockets[i]);
+        if (err) 
+            return -1;
 
-        if (i == 0 || i == 0xffffffff)
-            return INVALID_IP;
+        set_socket_timeout(&sockets[i]);
+        //printf("\nSending ARP packet to: %s ...\n\n", ip);
 
-        err = send_arp_request(arp_fd, ifindex, mac, src, invert_IP(i));
+        if (u_ip == 0 || u_ip == 0xffffffff) {
+            errno = INVALID_IP;
+            return -1;
+        }
+
+        err = send_arp_request(sockets[i], ifindex, mac, src, invert_IP(u_ip));
 
         if (err) {
-            close(arp_fd);
-            arp_fd = 0;
+            close(sockets[i]);
+            sockets[i] = 0;
             return err;
         }
 
-        while(1) {
-            int r = read_arp(arp_fd);
-            if (r > 0) 
-                perror("");
-            else if (r < 0)
-                ERROR(r);
-            break;
-        }
-
-        printf("\n###############################\n");
+        //printf("\n###############################\n");
         sleep(timeout);
+        u_ip++;
         i++;
-    }
-    while (i < _end);
 
-    close(arp_fd);
+        if (i >= n_host && u_ip < _end) {
+            unsigned _u_ip = u_ip - i;
+            
+            sleep(3);
+            printf("\nReading %u replies ...\n\n", n_host);
+        
+            for (int j = 0; j < n_host; j++) {
+                ip = cast_uint_to_IPv4(_u_ip);
+            
+                while(1) {
+                    read_arp(sockets[j], ip);
+                    free(ip);
+                    close(sockets[j]);
+                    break;
+                }
+                _u_ip++;
+            }
+            i = 0;
+            printf("\nSending requests ...\n");
+        }
+        else if (i <= n_host && u_ip >= _end) {
+            unsigned _u_ip = u_ip - i;
+            
+            sleep(3);
+            printf("\nReading replies ...\n\n");
+        
+            for (int j = 0; j < n_host; j++) {
+                ip = cast_uint_to_IPv4(_u_ip);
+            
+                while(1) {
+                    read_arp(sockets[j], ip);
+                    free(ip);
+                    close(sockets[j]);
+                    break;
+                }
+                _u_ip++;
+            }
+        }
+    }
+    while (u_ip < _end);
+
+    free(snet);
+    free(sockets);
     return NO_ERROR;
 }
 
@@ -590,22 +649,33 @@ int main(int argc, char *argv[]) {
     char * start = cast_uint_to_IPv4(snet->start);
     char * end = cast_uint_to_IPv4(snet->end);
     char * mask = cast_uint_to_IPv4(snet->mask);
-    unsigned host_to_discover = snet->end - (snet->start + 1);
+    uint32_t host_to_discover = snet->end - (snet->start + 1);
 
-    if (snet->mask >= 4294967294) host_to_discover += 2;
+    switch (snet->mask) {
+        case (4294967294): {
+            host_to_discover = 2;
+            break;
+        }
+        case (4294967295): {
+            host_to_discover = 1;
+            break;
+        }
+    }
 
     printf("###############################\n");
     printf("Subnet begins at: %s\n", start);
     printf("Subnet ends at: %s\n", end);
     printf("Subnet mask is: %s\n", mask);
-    printf("Host to discover: %d\n", host_to_discover);
+    printf("Host to discover: %u\n", host_to_discover);
     printf("###############################\n");
 
     free(start);
     free(end);
     free(mask);
 
-    ERROR(_arping(interface, snet, req_timeout));
+    int outcome = _arping(interface, snet, req_timeout, host_to_discover);
+    if (outcome == -1)
+        ERROR(errno);
 
     printf("\nActive HOST = %u\n", active_host);
     return 0;
