@@ -1,2 +1,2 @@
 all:
-	gcc -Wall -pedantic -g -o out.o src/main.c
+	gcc -std=c99 -Wall -pedantic -g -o out.o src/main.c
