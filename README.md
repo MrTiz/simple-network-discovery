@@ -1,4 +1,4 @@
-# Simple Network Discovery
+# Simple Network Discovery [![Build Status](https://travis-ci.org/MrTiz9/simple-network-discovery.svg?branch=master)](https://travis-ci.org/MrTiz9/simple-network-discovery)
 
 This is a simple network discovery tool that send ARP packets to all devices connected to the network.
 
