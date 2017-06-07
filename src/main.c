@@ -2,6 +2,7 @@
 #include <sys/socket.h>
 #include <sys/ioctl.h>
 #include <sys/types.h>
+#include <sys/time.h>
 #include <asm/types.h>
 #include <netdb.h>
 #include <ifaddrs.h>
@@ -15,6 +16,7 @@
 #include <linux/if_packet.h>
 #include <linux/if_ether.h>
 #include <linux/if_arp.h>
+#include <getopt.h>
 
 #define PROTO_ARP 0x0806
 #define ETH2_HEADER_LEN 14
